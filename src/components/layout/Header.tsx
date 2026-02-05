@@ -1,6 +1,5 @@
 import { Bell, Search, User, LogOut } from 'lucide-react';
-import { Profile } from '../../lib/supabase';
-import { Button } from '../ui/Button';
+import { Profile } from '../../lib/auth';
 
 interface HeaderProps {
   profile: Profile;

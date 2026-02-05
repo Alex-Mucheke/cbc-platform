@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { GraduationCap, Mail, Lock } from 'lucide-react';
-import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -23,7 +22,7 @@ export function LoginPage({ onToggleForm }: LoginPageProps) {
     try {
       await signIn(email, password);
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in');
+      setError(err?.message || 'Failed to sign in');
     } finally {
       setLoading(false);
     }
@@ -45,7 +44,12 @@ export function LoginPage({ onToggleForm }: LoginPageProps) {
 
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
+              <p>{error}</p>
+              {error.includes('Invalid email or password') && (
+                <p className="mt-1 text-red-500 text-xs">
+                  First time? Use &quot;Sign Up&quot; below to create an account.
+                </p>
+              )}
             </div>
           )}
 

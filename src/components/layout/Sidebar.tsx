@@ -10,8 +10,11 @@ import {
   Users,
   Award,
   Clock,
+  FileCheck,
+  Upload,
+  ShieldCheck,
 } from 'lucide-react';
-import { UserType } from '../../lib/supabase';
+import { UserType } from '../../lib/auth';
 
 interface NavItem {
   icon: typeof Home;
@@ -23,7 +26,10 @@ interface NavItem {
 const navItems: NavItem[] = [
   { icon: Home, label: 'Dashboard', href: '/dashboard', roles: ['student', 'teacher', 'parent', 'admin'] },
   { icon: BookOpen, label: 'Digital Library', href: '/library', roles: ['student', 'teacher', 'admin'] },
+  { icon: Upload, label: 'Upload book', href: '/library/upload', roles: ['teacher', 'admin'] },
   { icon: FileText, label: 'Exam Center', href: '/exams', roles: ['student', 'teacher', 'admin'] },
+  { icon: FileCheck, label: 'Mark written exams', href: '/teacher/marking', roles: ['teacher', 'admin'] },
+  { icon: ShieldCheck, label: 'Content approval', href: '/admin/library', roles: ['admin'] },
   { icon: GraduationCap, label: 'My Courses', href: '/courses', roles: ['student'] },
   { icon: Award, label: 'Achievements', href: '/achievements', roles: ['student'] },
   { icon: BarChart3, label: 'Performance', href: '/performance', roles: ['student', 'parent'] },

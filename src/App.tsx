@@ -9,6 +9,11 @@ import { TeacherDashboard } from './pages/teacher/TeacherDashboard';
 import { ParentDashboard } from './pages/parent/ParentDashboard';
 import { LibraryPage } from './pages/library/LibraryPage';
 import { ExamCenterPage } from './pages/exams/ExamCenterPage';
+import { JiggleYourMindPage } from './pages/exams/JiggleYourMindPage';
+import { SittingExamPage } from './pages/exams/SittingExamPage';
+import { TeacherMarkingPage } from './pages/exams/TeacherMarkingPage';
+import { LibraryUploadPage } from './pages/library/LibraryUploadPage';
+import { AdminLibraryPage } from './pages/admin/AdminLibraryPage';
 
 function AppContent() {
   const { user, profile, loading, signOut } = useAuth();
@@ -36,14 +41,29 @@ function AppContent() {
 
   const renderPage = () => {
     if (currentPath === '/library') {
-      return <LibraryPage />;
+      return <LibraryPage onNavigate={setCurrentPath} />;
+    }
+    if (currentPath === '/library/upload') {
+      return <LibraryUploadPage onNavigate={setCurrentPath} />;
+    }
+    if (currentPath === '/admin/library') {
+      return <AdminLibraryPage onNavigate={setCurrentPath} />;
     }
     if (currentPath === '/exams') {
-      return <ExamCenterPage />;
+      return <ExamCenterPage onNavigate={setCurrentPath} />;
+    }
+    if (currentPath === '/jiggle-your-mind') {
+      return <JiggleYourMindPage onNavigate={setCurrentPath} />;
+    }
+    if (currentPath === '/sitting-exam') {
+      return <SittingExamPage onNavigate={setCurrentPath} profile={profile} />;
+    }
+    if (currentPath === '/teacher/marking') {
+      return <TeacherMarkingPage onNavigate={setCurrentPath} />;
     }
 
     if (profile.user_type === 'student') {
-      return <StudentDashboard />;
+      return <StudentDashboard onNavigate={setCurrentPath} />;
     }
     if (profile.user_type === 'teacher') {
       return <TeacherDashboard />;
@@ -52,10 +72,10 @@ function AppContent() {
       return <ParentDashboard />;
     }
     if (profile.user_type === 'admin') {
-      return <StudentDashboard />;
+      return <StudentDashboard onNavigate={setCurrentPath} />;
     }
 
-    return <StudentDashboard />;
+    return <StudentDashboard onNavigate={setCurrentPath} />;
   };
 
   return (

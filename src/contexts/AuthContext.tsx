@@ -1,10 +1,23 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase, Profile } from '../lib/supabase';
+import {
+  Profile,
+  getSession,
+  getProfileFromSession,
+  signInLocal,
+  signUpLocal,
+  signOutLocal,
+} from '../lib/auth';
+import {
+  hasBackend,
+  clearToken,
+  apiLogin,
+  apiRegister,
+  apiMe,
+} from '../lib/api';
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: { id: string; email: string } | null;
+  session: { userId: string; email: string } | null;
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
@@ -15,77 +28,86 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [session, setSession] = useState<{ userId: string; email: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((async () => {
-      (async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await loadProfile(session.user.id);
-        } else {
+    if (hasBackend()) {
+      apiMe()
+        .then((data) => {
+          if (data) {
+            setUser(data.user);
+            setSession({ userId: data.user.id, email: data.user.email });
+            setProfile(data.profile);
+          } else {
+            setUser(null);
+            setSession(null);
+            setProfile(null);
+          }
+        })
+        .catch(() => {
+          setUser(null);
+          setSession(null);
           setProfile(null);
-          setLoading(false);
-        }
-      })();
-    }) as any);
-
-    return () => subscription.unsubscribe();
+        })
+        .finally(() => setLoading(false));
+    } else {
+      const s = getSession();
+      setSession(s);
+      if (s) {
+        setUser({ id: s.userId, email: s.email });
+        const p = getProfileFromSession();
+        setProfile(p);
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
+      setLoading(false);
+    }
   }, []);
 
-  const loadProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    } finally {
-      setLoading(false);
+  const signIn = async (email: string, password: string) => {
+    if (hasBackend()) {
+      const data = await apiLogin(email, password);
+      setUser(data.user);
+      setSession({ userId: data.user.id, email: data.user.email });
+      setProfile(data.profile);
+    } else {
+      const p = await signInLocal(email, password);
+      if (!p) throw new Error('Invalid email or password');
+      setSession(getSession());
+      setUser({ id: p.id, email });
+      setProfile(p);
     }
   };
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
-
-  const signUp = async (email: string, password: string, fullName: string, userType: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-
-    if (data.user) {
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: data.user.id,
-        full_name: fullName,
-        user_type: userType,
-      });
-      if (profileError) throw profileError;
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    userType: string
+  ) => {
+    if (hasBackend()) {
+      const data = await apiRegister(email, password, fullName, userType);
+      setUser(data.user);
+      setSession({ userId: data.user.id, email: data.user.email });
+      setProfile(data.profile);
+    } else {
+      const p = await signUpLocal(email, password, fullName, userType as Profile['user_type']);
+      setSession(getSession());
+      setUser({ id: p.id, email });
+      setProfile(p);
     }
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    if (hasBackend()) clearToken();
+    else signOutLocal();
+    setSession(null);
+    setUser(null);
+    setProfile(null);
   };
 
   return (

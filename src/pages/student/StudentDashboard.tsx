@@ -1,13 +1,95 @@
-import { Award, BookOpen, TrendingUp, Clock, Target, Zap } from 'lucide-react';
-import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+/**
+ * Student Dashboard — progress bars, streak, XP, level, badges, daily challenge, recent activity.
+ */
 
-export function StudentDashboard() {
+import { useState, useEffect, useCallback } from 'react';
+import { Award, BookOpen, TrendingUp, Clock, Target, Zap, Flame, Trophy } from 'lucide-react';
+import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import {
+  hasBackend,
+  apiEngagementSummary,
+  apiEngagementProgress,
+  apiEngagementDailyChallenge,
+  type EngagementSummary,
+} from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
+
+function formatTimeAgo(iso: string): string {
+  const d = new Date(iso);
+  const now = Date.now();
+  const diff = Math.floor((now - d.getTime()) / 1000);
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return d.toLocaleDateString();
+}
+
+interface StudentDashboardProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function StudentDashboard({ onNavigate }: StudentDashboardProps) {
+  const { profile } = useAuth();
+  const [summary, setSummary] = useState<EngagementSummary | null>(null);
+  const [progressBySubject, setProgressBySubject] = useState<Array<{ subject_name: string; completed: number; total: number; percent: number }>>([]);
+  const [dailyChallenge, setDailyChallenge] = useState<{
+    challenge: { id: string; title: string; quiz_id: string; subject_name: string; grade_name: string } | null;
+    attempted: { score: number; total_questions: number } | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!hasBackend()) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const [s, p, d] = await Promise.all([
+        apiEngagementSummary(),
+        apiEngagementProgress(),
+        apiEngagementDailyChallenge(),
+      ]);
+      setSummary(s);
+      setProgressBySubject(p);
+      setDailyChallenge(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const name = profile?.full_name?.split(' ')[0] || 'Student';
+  const streak = summary?.streak?.current ?? 0;
+  const longest = summary?.streak?.longest ?? 0;
+  const xp = summary?.xp ?? 0;
+  const level = summary?.level ?? 1;
+  const badgesCount = summary?.badges_count ?? 0;
+  const progressPercent = summary?.progress?.progress_percent ?? 0;
+  const quizzesCompleted = summary?.progress?.quizzes_completed ?? 0;
+  const examsCompleted = summary?.progress?.exams_completed ?? 0;
+  const totalActivities = summary?.progress?.total_activities ?? 0;
+  const recentActivity = summary?.recent_activity ?? [];
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back, Student!</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back, {name}!</h1>
         <p className="text-gray-600">Track your progress and continue your learning journey</p>
       </div>
+
+      {error && (
+        <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">{error}</div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
@@ -16,8 +98,13 @@ export function StudentDashboard() {
               <BookOpen className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Courses in Progress</p>
-              <p className="text-2xl font-bold text-gray-900">8</p>
+              <p className="text-sm text-gray-600">Progress</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {loading && hasBackend() ? '…' : `${progressPercent}%`}
+              </p>
+              {hasBackend() && !loading && (
+                <p className="text-xs text-gray-500">{quizzesCompleted + examsCompleted} / {totalActivities} activities</p>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -28,8 +115,13 @@ export function StudentDashboard() {
               <TrendingUp className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Average Score</p>
-              <p className="text-2xl font-bold text-gray-900">87%</p>
+              <p className="text-sm text-gray-600">Level</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {loading && hasBackend() ? '…' : level}
+              </p>
+              {hasBackend() && !loading && (
+                <p className="text-xs text-gray-500">{xp.toLocaleString()} XP</p>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -41,7 +133,9 @@ export function StudentDashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total XP</p>
-              <p className="text-2xl font-bold text-gray-900">2,450</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {loading && hasBackend() ? '…' : xp.toLocaleString()}
+              </p>
             </div>
           </CardBody>
         </Card>
@@ -52,88 +146,126 @@ export function StudentDashboard() {
               <Award className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Badges Earned</p>
-              <p className="text-2xl font-bold text-gray-900">12</p>
+              <p className="text-sm text-gray-600">Badges</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {loading && hasBackend() ? '…' : badgesCount}
+              </p>
             </div>
           </CardBody>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <h3 className="text-lg font-semibold text-gray-900">Current Learning Streak</h3>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Flame className="w-5 h-5 text-orange-500" />
+                Learning Streak
+              </h3>
             </CardHeader>
             <CardBody>
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <p className="text-4xl font-bold text-blue-600">7 Days</p>
-                  <p className="text-sm text-gray-600 mt-1">Keep it up! You're doing great</p>
+                  <p className="text-4xl font-bold text-orange-600">
+                    {loading && hasBackend() ? '…' : `${streak} day${streak !== 1 ? 's' : ''}`}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {longest > 0 && `Longest: ${longest} days`}
+                    {longest === 0 && streak === 0 && "Complete a quiz or exam to start your streak"}
+                    {streak > 0 && "Keep it up! You're doing great"}
+                  </p>
                 </div>
                 <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center">
-                  <Clock className="w-10 h-10 text-white" />
+                  <Flame className="w-10 h-10 text-white" />
                 </div>
               </div>
-
               <div className="grid grid-cols-7 gap-2">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
-                  <div key={day} className="text-center">
-                    <div
-                      className={`w-full h-12 rounded-lg mb-1 flex items-center justify-center ${
-                        index < 5
-                          ? 'bg-green-100 text-green-600'
-                          : 'bg-gray-100 text-gray-400'
-                      }`}
-                    >
-                      {index < 5 ? '✓' : ''}
+                {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+                  const filled = hasBackend() && !loading && streak > i;
+                  return (
+                    <div key={i} className="text-center">
+                      <div
+                        className={`w-full h-12 rounded-lg mb-1 flex items-center justify-center ${
+                          filled ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        {filled ? '✓' : ''}
+                      </div>
+                      <p className="text-xs text-gray-600">Day {i + 1}</p>
                     </div>
-                    <p className="text-xs text-gray-600">{day}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardBody>
           </Card>
 
-          <Card className="mt-6">
+          {dailyChallenge?.challenge && !dailyChallenge.attempted && hasBackend() && (
+            <Card className="border-2 border-amber-200 bg-amber-50/50">
+              <CardHeader>
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-amber-600" />
+                  Daily Challenge
+                </h3>
+              </CardHeader>
+              <CardBody>
+                <p className="font-medium text-gray-900">{dailyChallenge.challenge.title}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {dailyChallenge.challenge.subject_name} · {dailyChallenge.challenge.grade_name}
+                </p>
+                <Button
+                  className="mt-4"
+                  variant="primary"
+                  onClick={() => onNavigate?.('/jiggle-your-mind')}
+                >
+                  Start challenge
+                </Button>
+              </CardBody>
+            </Card>
+          )}
+
+          {dailyChallenge?.attempted && (
+            <Card>
+              <CardHeader>
+                <h3 className="text-lg font-semibold text-gray-900">Daily Challenge</h3>
+              </CardHeader>
+              <CardBody>
+                <p className="text-green-700 font-medium">Completed today!</p>
+                <p className="text-sm text-gray-600">
+                  Score: {dailyChallenge.attempted.score} / {dailyChallenge.attempted.total_questions}
+                </p>
+              </CardBody>
+            </Card>
+          )}
+
+          <Card>
             <CardHeader>
-              <h3 className="text-lg font-semibold text-gray-900">Recent Activities</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
             </CardHeader>
             <CardBody>
-              <div className="space-y-4">
-                {[
-                  {
-                    subject: 'Mathematics',
-                    activity: 'Completed Chapter 5 Assessment',
-                    score: 92,
-                    time: '2 hours ago',
-                  },
-                  {
-                    subject: 'English',
-                    activity: 'Read "The River Between"',
-                    score: null,
-                    time: '5 hours ago',
-                  },
-                  {
-                    subject: 'Science',
-                    activity: 'Watched: States of Matter',
-                    score: null,
-                    time: 'Yesterday',
-                  },
-                ].map((item, index) => (
-                  <div key={index} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">{item.activity}</p>
-                      <p className="text-sm text-gray-600">{item.subject} • {item.time}</p>
-                    </div>
-                    {item.score && (
-                      <div className="ml-4 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                        {item.score}%
+              {loading && hasBackend() ? (
+                <p className="text-gray-500">Loading...</p>
+              ) : recentActivity.length === 0 ? (
+                <p className="text-gray-500">Complete quizzes or exams to see activity here.</p>
+              ) : (
+                <div className="space-y-4">
+                  {recentActivity.slice(0, 8).map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">
+                          {item.type === 'quiz' ? 'Quiz' : 'Exam'}: {item.title}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {item.subject_name} · {formatTimeAgo(item.completed_at)}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardBody>
           </Card>
         </div>
@@ -141,53 +273,42 @@ export function StudentDashboard() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <h3 className="text-lg font-semibold text-gray-900">Subject Performance</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Overall Progress</h3>
             </CardHeader>
             <CardBody>
-              <div className="space-y-4">
-                {[
-                  { subject: 'Mathematics', score: 92, color: 'blue' },
-                  { subject: 'English', score: 88, color: 'green' },
-                  { subject: 'Science', score: 85, color: 'purple' },
-                  { subject: 'Kiswahili', score: 78, color: 'orange' },
-                ].map((item) => (
-                  <div key={item.subject}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-700">{item.subject}</span>
-                      <span className="text-sm font-bold text-gray-900">{item.score}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className={`bg-${item.color}-600 h-2 rounded-full transition-all duration-300`}
-                        style={{ width: `${item.score}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
+              <div className="mb-4">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-700">All activities</span>
+                  <span className="font-medium text-gray-900">{progressPercent}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, progressPercent)}%` }}
+                  />
+                </div>
               </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h3 className="text-lg font-semibold text-gray-900">Upcoming Assessments</h3>
-            </CardHeader>
-            <CardBody>
-              <div className="space-y-3">
-                {[
-                  { subject: 'Mathematics', title: 'End Term Exam', date: 'Dec 15' },
-                  { subject: 'English', title: 'Essay Writing', date: 'Dec 18' },
-                  { subject: 'Science', title: 'Lab Practical', date: 'Dec 20' },
-                ].map((item, index) => (
-                  <div key={index} className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                    <p className="font-medium text-gray-900 text-sm">{item.title}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-gray-600">{item.subject}</span>
-                      <span className="text-xs font-medium text-blue-600">{item.date}</span>
+              {progressBySubject.length > 0 && (
+                <div className="space-y-3 mt-4">
+                  {progressBySubject.map((s) => (
+                    <div key={s.subject_name}>
+                      <div className="flex justify-between text-sm mb-0.5">
+                        <span className="text-gray-700">{s.subject_name}</span>
+                        <span className="font-medium text-gray-900">{s.percent}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2">
+                        <div
+                          className="bg-green-500 h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, s.percent)}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+              {progressBySubject.length === 0 && !loading && hasBackend() && (
+                <p className="text-sm text-gray-500">Complete quizzes to see progress by subject.</p>
+              )}
             </CardBody>
           </Card>
 
@@ -202,28 +323,28 @@ export function StudentDashboard() {
                     <Target className="w-4 h-4 text-green-600" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">Complete 10 lessons</p>
-                    <p className="text-xs text-gray-600">7 of 10 completed</p>
+                    <p className="text-sm font-medium text-gray-900">Complete activities</p>
+                    <p className="text-xs text-gray-600">
+                      {quizzesCompleted + examsCompleted} completed · {totalActivities} total
+                    </p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Award className="w-4 h-4 text-blue-600" />
+                  <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Award className="w-4 h-4 text-purple-600" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">Earn 5 new badges</p>
-                    <p className="text-xs text-gray-600">3 of 5 earned</p>
+                    <p className="text-sm font-medium text-gray-900">Earn badges</p>
+                    <p className="text-xs text-gray-600">{badgesCount} earned</p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
                     <Clock className="w-4 h-4 text-orange-600" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">14-day streak</p>
-                    <p className="text-xs text-gray-600">7 of 14 days</p>
+                    <p className="text-sm font-medium text-gray-900">Build your streak</p>
+                    <p className="text-xs text-gray-600">{streak} day streak · Best: {longest} days</p>
                   </div>
                 </div>
               </div>
