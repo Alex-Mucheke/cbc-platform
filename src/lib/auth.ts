@@ -169,6 +169,13 @@ export function signOutLocal(): void {
   setSession(null);
 }
 
+/** Clear all CBC auth from localStorage (token, local users, session) for a fresh sign-in. */
+export function clearAllAuthStorage(): void {
+  localStorage.removeItem('cbc_token');
+  localStorage.removeItem(STORAGE_USERS);
+  localStorage.removeItem(STORAGE_SESSION);
+}
+
 export function getProfileFromSession(): Profile | null {
   const session = getSession();
   if (!session) return null;

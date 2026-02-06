@@ -116,9 +116,42 @@ function checkAndAwardBadges(userId, context = {}) {
 }
 
 /**
+ * Upsert user_topic_performance for weakness tracker (per subject/strand).
+ */
+function upsertUserTopicPerformance(userId, subjectId, strandId, subStrandId, correct, total) {
+  const scorePercent = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const now = new Date().toISOString();
+  let existing = null;
+  if (strandId || subStrandId) {
+    existing = db
+      .prepare(
+        'SELECT id, attempts_count, correct_count, total_questions FROM user_topic_performance WHERE user_id = ? AND subject_id = ? AND strand_id = ? AND sub_strand_id = ?'
+      )
+      .get(userId, subjectId, strandId || null, subStrandId || null);
+  } else {
+    existing = db
+      .prepare(
+        'SELECT id, attempts_count, correct_count, total_questions FROM user_topic_performance WHERE user_id = ? AND subject_id = ? AND strand_id IS NULL AND sub_strand_id IS NULL'
+      )
+      .get(userId, subjectId);
+  }
+  if (existing) {
+    db.prepare(
+      `UPDATE user_topic_performance SET attempts_count = attempts_count + 1, correct_count = correct_count + ?,
+       total_questions = total_questions + ?, last_score_percent = ?, last_activity_at = ?, updated_at = ? WHERE id = ?`
+    ).run(correct, total, scorePercent, now, now, existing.id);
+  } else {
+    db.prepare(
+      `INSERT INTO user_topic_performance (id, user_id, subject_id, strand_id, sub_strand_id, attempts_count, correct_count, total_questions, last_score_percent, last_activity_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`
+    ).run(randomUUID(), userId, subjectId, strandId || null, subStrandId || null, correct, total, scorePercent, now, now);
+  }
+}
+
+/**
  * Call when student completes a quiz attempt.
  * @param {string} userId
- * @param {{ quiz_id: string, score: number, total: number }} data
+ * @param {{ quiz_id: string, score: number, total: number, subject_id?: string, strand_id?: string }} data
  */
 export function recordQuizComplete(userId, data) {
   const { quiz_id, score = 0, total = 1 } = data;
@@ -128,6 +161,10 @@ export function recordQuizComplete(userId, data) {
   addXP(userId, xp);
   recordProgress(userId, 'quiz', quiz_id);
   checkAndAwardBadges(userId, { score, total });
+  const quiz = db.prepare('SELECT subject_id, strand_id FROM quizzes WHERE id = ?').get(quiz_id);
+  if (quiz) {
+    upsertUserTopicPerformance(userId, quiz.subject_id, quiz.strand_id, null, score, total);
+  }
 }
 
 /**
@@ -280,5 +317,83 @@ export function getProgressBySubject(userId) {
     completed: r.completed,
     total: bySubject[r.subject_id] || 0,
     percent: bySubject[r.subject_id] ? Math.round((r.completed / bySubject[r.subject_id]) * 100) : 0,
+  }));
+}
+
+/**
+ * Get weak topics for dashboard (last_score_percent < 70 or few attempts).
+ */
+export function getWeaknesses(userId) {
+  const rows = db
+    .prepare(
+      `SELECT p.subject_id, p.strand_id, p.sub_strand_id, p.attempts_count, p.correct_count, p.total_questions, p.last_score_percent, p.last_activity_at,
+              s.name AS subject_name, st.name AS strand_name, ss.name AS sub_strand_name
+       FROM user_topic_performance p
+       JOIN subjects s ON p.subject_id = s.id
+       LEFT JOIN strands st ON p.strand_id = st.id
+       LEFT JOIN sub_strands ss ON p.sub_strand_id = ss.id
+       WHERE p.user_id = ? AND (p.last_score_percent < 70 OR p.attempts_count < 2 OR p.last_score_percent IS NULL)
+       ORDER BY COALESCE(p.last_score_percent, 0) ASC, p.attempts_count ASC
+       LIMIT 15`
+    )
+    .all(userId);
+  return rows;
+}
+
+/**
+ * Get last score for subject/strand (for adaptive difficulty). Returns 0-100 or null.
+ */
+export function getLastScoreForSubjectStrand(userId, subjectId, strandId) {
+  const row = db
+    .prepare(
+      'SELECT last_score_percent FROM user_topic_performance WHERE user_id = ? AND subject_id = ? AND (strand_id IS ? OR strand_id = ?) ORDER BY last_activity_at DESC LIMIT 1'
+    )
+    .get(userId, subjectId, strandId || null, strandId || '');
+  return row?.last_score_percent ?? null;
+}
+
+/**
+ * Readiness score: "You are X% ready for your next assessment."
+ * Based on overall progress and weak-topics penalty.
+ */
+export function getReadiness(userId) {
+  ensureUserEngagement(userId);
+  const summary = getSummary(userId);
+  const progressPercent = summary.progress?.progress_percent ?? 0;
+  const weaknesses = getWeaknesses(userId);
+  const weakCount = weaknesses.length;
+  const weakPenalty = Math.min(25, weakCount * 5);
+  const readinessPercent = Math.max(0, Math.min(100, progressPercent - weakPenalty));
+  const gradeName = db.prepare('SELECT name FROM grades ORDER BY sort_order ASC LIMIT 1').get()?.name || 'Grade';
+  return {
+    grade_id: null,
+    grade_name: gradeName,
+    readiness_percent: readinessPercent,
+    message: readinessPercent >= 70
+      ? `You are ${readinessPercent}% ready for your next assessment. Keep it up!`
+      : `You are ${readinessPercent}% ready. Practice weak topics to improve.`,
+  };
+}
+
+/**
+ * Leaderboard by total XP (global). scope=global, limit default 10.
+ */
+export function getLeaderboard(scope = 'global', limit = 10) {
+  const rows = db
+    .prepare(
+      `SELECT u.id AS user_id, u.full_name, ux.total_xp, ux.level
+       FROM user_xp ux
+       JOIN users u ON ux.user_id = u.id
+       WHERE u.user_type = 'student'
+       ORDER BY ux.total_xp DESC
+       LIMIT ?`
+    )
+    .all(limit);
+  return rows.map((r, i) => ({
+    rank: i + 1,
+    user_id: r.user_id,
+    full_name: r.full_name,
+    total_xp: r.total_xp,
+    level: r.level,
   }));
 }

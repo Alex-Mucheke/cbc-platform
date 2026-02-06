@@ -361,6 +361,107 @@ export function runSchema(db) {
       completed_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_weekly_attempts_quiz ON weekly_attempts(weekly_quiz_id);
+
+    -- ========== LEARNING SUPPORT: Lessons, hints, weakness, notes, prefs ==========
+    CREATE TABLE IF NOT EXISTS lessons (
+      id TEXT PRIMARY KEY,
+      grade_id TEXT NOT NULL REFERENCES grades(id),
+      subject_id TEXT NOT NULL REFERENCES subjects(id),
+      strand_id TEXT REFERENCES strands(id),
+      sub_strand_id TEXT REFERENCES sub_strands(id),
+      title TEXT NOT NULL,
+      slug TEXT,
+      content_text TEXT,
+      content_html TEXT,
+      audio_url TEXT,
+      video_url TEXT,
+      diagram_url TEXT,
+      interactive_json TEXT,
+      duration_minutes INTEGER,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_lessons_grade_subject ON lessons(grade_id, subject_id);
+    CREATE INDEX IF NOT EXISTS idx_lessons_sub_strand ON lessons(sub_strand_id);
+
+    CREATE TABLE IF NOT EXISTS lesson_progress (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      lesson_id TEXT NOT NULL REFERENCES lessons(id),
+      completed INTEGER DEFAULT 0,
+      time_spent_seconds INTEGER DEFAULT 0,
+      last_position_seconds INTEGER,
+      completed_at TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_lesson_progress_user_lesson ON lesson_progress(user_id, lesson_id);
+    CREATE INDEX IF NOT EXISTS idx_lesson_progress_user ON lesson_progress(user_id);
+
+    CREATE TABLE IF NOT EXISTS question_hints (
+      id TEXT PRIMARY KEY,
+      question_entity_type TEXT NOT NULL CHECK (question_entity_type IN ('quiz_question', 'question_bank')),
+      question_entity_id TEXT NOT NULL,
+      step_order INTEGER NOT NULL,
+      step_type TEXT NOT NULL CHECK (step_type IN ('hint', 'full_solution', 'explanation_video')),
+      content_text TEXT,
+      content_html TEXT,
+      video_url TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_hints_question ON question_hints(question_entity_type, question_entity_id);
+
+    CREATE TABLE IF NOT EXISTS user_topic_performance (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      subject_id TEXT NOT NULL REFERENCES subjects(id),
+      strand_id TEXT REFERENCES strands(id),
+      sub_strand_id TEXT REFERENCES sub_strands(id),
+      attempts_count INTEGER DEFAULT 0,
+      correct_count INTEGER DEFAULT 0,
+      total_questions INTEGER DEFAULT 0,
+      last_score_percent INTEGER,
+      last_activity_at TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_topic_perf_user ON user_topic_performance(user_id);
+    CREATE INDEX IF NOT EXISTS idx_topic_perf_lookup ON user_topic_performance(user_id, subject_id, strand_id, sub_strand_id);
+
+    CREATE TABLE IF NOT EXISTS practice_recommendations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      subject_id TEXT NOT NULL REFERENCES subjects(id),
+      strand_id TEXT REFERENCES strands(id),
+      reason TEXT NOT NULL CHECK (reason IN ('weak_topic', 'revision', 'next_in_path')),
+      priority INTEGER DEFAULT 0,
+      quiz_ids_json TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_practice_rec_user ON practice_recommendations(user_id);
+
+    CREATE TABLE IF NOT EXISTS mistake_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      question_entity_type TEXT NOT NULL CHECK (question_entity_type IN ('quiz_question', 'question_bank')),
+      question_entity_id TEXT NOT NULL,
+      attempt_id TEXT,
+      wrong_answer_text TEXT,
+      correct_answer_text TEXT,
+      explanation_shown INTEGER DEFAULT 0,
+      retry_count INTEGER DEFAULT 0,
+      last_wrong_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_mistake_log_user ON mistake_log(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id TEXT PRIMARY KEY REFERENCES users(id),
+      font_size TEXT DEFAULT 'medium' CHECK (font_size IN ('small', 'medium', 'large')),
+      theme TEXT DEFAULT 'light' CHECK (theme IN ('light', 'dark', 'system')),
+      text_to_speech INTEGER DEFAULT 0,
+      low_data_mode INTEGER DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Migration: add new columns to existing tables (no-op if already present)

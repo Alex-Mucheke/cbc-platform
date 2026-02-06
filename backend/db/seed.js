@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runSchema } from './schema.js';
+import { runTermPlannerSchema } from './term-planner-schema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, '..', 'data');
@@ -17,6 +18,7 @@ const dbPath = path.join(dataDir, 'cbc.db');
 
 const db = new Database(dbPath);
 runSchema(db);
+runTermPlannerSchema(db);
 
 // Fixed IDs for idempotent seed
 const SUBJECT_MATH = 'seed-subject-math';
@@ -266,5 +268,102 @@ db.prepare(
   `INSERT OR REPLACE INTO weekly_quizzes (id, subject_id, grade_id, quiz_id, title, week_number, year) VALUES (?, ?, ?, ?, ?, ?, ?)`
 ).run('seed-weekly-1', SUBJECT_MATH, GRADE_6, 'seed-quiz-math6', 'Weekly Math Quiz - Grade 6', weekNum, year);
 
+// --- Question hints (step-by-step for seed quiz questions) ---
+const hintRows = [
+  { id: 'seed-h1', qId: 'seed-q1', step_order: 1, step_type: 'hint', content_text: 'Break 12 × 8 into (10 × 8) + (2 × 8).' },
+  { id: 'seed-h2', qId: 'seed-q1', step_order: 2, step_type: 'hint', content_text: '10 × 8 = 80 and 2 × 8 = 16. Add them.' },
+  { id: 'seed-h3', qId: 'seed-q1', step_order: 3, step_type: 'full_solution', content_text: '12 × 8 = (10 × 8) + (2 × 8) = 80 + 16 = 96.' },
+  { id: 'seed-h4', qId: 'seed-q2', step_order: 1, step_type: 'hint', content_text: 'A prime number has exactly two factors: 1 and itself.' },
+  { id: 'seed-h5', qId: 'seed-q2', step_order: 2, step_type: 'full_solution', content_text: '15 = 3 × 5, so 15 has factors 1, 3, 5, 15. So 15 is not prime. The answer is False.' },
+  { id: 'seed-h6', qId: 'seed-q3', step_order: 1, step_type: 'hint', content_text: 'Equivalent fractions have the same value. Multiply or divide numerator and denominator by the same number.' },
+  { id: 'seed-h7', qId: 'seed-q3', step_order: 2, step_type: 'full_solution', content_text: '3/4 = 6/8 (multiply top and bottom by 2). So 6/8 is equivalent to 3/4.' },
+];
+hintRows.forEach((h) => {
+  db.prepare(
+    `INSERT OR REPLACE INTO question_hints (id, question_entity_type, question_entity_id, step_order, step_type, content_text) VALUES (?, 'quiz_question', ?, ?, ?, ?)`
+  ).run(h.id, h.qId, h.step_order, h.step_type, h.content_text);
+});
+
+// --- Term planner: terms + weeks per grade (Grade 6 & 7, 3 terms, 13 weeks each) ---
+const gradeIdsForTerms = [GRADE_6, GRADE_7];
+gradeIdsForTerms.forEach((gradeId) => {
+  for (let t = 1; t <= 3; t++) {
+    const termId = `seed-term-${gradeId}-${t}`;
+    db.prepare(
+      'INSERT OR REPLACE INTO terms (id, grade_id, name, term_number, sort_order) VALUES (?, ?, ?, ?, ?)'
+    ).run(termId, gradeId, `Term ${t}`, t, t);
+    for (let w = 1; w <= 13; w++) {
+      const weekId = `seed-week-${termId}-${w}`;
+      db.prepare(
+        'INSERT OR REPLACE INTO term_weeks (id, term_id, week_number, title, sort_order) VALUES (?, ?, ?, ?, ?)'
+      ).run(weekId, termId, w, `Week ${w}`, w);
+    }
+  }
+});
+
+// --- Timetable: default weekly slots for Grade 7 (Mon=1 .. Fri=5) ---
+const DAYS = [
+  { day: 1, name: 'Monday' },
+  { day: 2, name: 'Tuesday' },
+  { day: 3, name: 'Wednesday' },
+  { day: 4, name: 'Thursday' },
+  { day: 5, name: 'Friday' },
+];
+const timetableSlots = [
+  { start: '08:00', end: '09:00', subjectId: SUBJECT_MATH, title: 'Numbers: Fractions', competency: 'Equivalent fractions, addition & subtraction' },
+  { start: '09:00', end: '10:00', subjectId: SUBJECT_ENG, title: 'Comprehension & Grammar', competency: 'Reading fluency, inference' },
+  { start: '10:00', end: '10:30', subjectId: null, title: 'Break', competency: null },
+  { start: '10:30', end: '11:30', subjectId: SUBJECT_SCI, title: 'Living Things', competency: 'Classification, life processes' },
+  { start: '11:30', end: '12:30', subjectId: SUBJECT_KIS, title: 'Kusoma na Kuandika', competency: 'Ufahamu na sarufi' },
+  { start: '12:30', end: '13:30', subjectId: null, title: 'Lunch', competency: null },
+  { start: '13:30', end: '14:30', subjectId: SUBJECT_SST, title: 'History & Citizenship', competency: 'Kenya history, rights' },
+  { start: '14:30', end: '15:30', subjectId: SUBJECT_ART, title: 'Creative Arts', competency: 'Drawing, music, drama' },
+];
+DAYS.forEach(({ day }) => {
+  let order = 0;
+  timetableSlots.forEach((slot) => {
+    if (!slot.subjectId) return;
+    const id = `seed-tt-${GRADE_7}-${day}-${order}`;
+    db.prepare(
+      `INSERT OR REPLACE INTO timetable_slots (id, grade_id, day_of_week, start_time, end_time, subject_id, title, competency_hint, link_type, link_id, is_suggested, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', NULL, 0, ?)`
+    ).run(id, GRADE_7, day, slot.start, slot.end, slot.subjectId, slot.title, slot.competency, order);
+    order += 1;
+  });
+});
+// Same for Grade 6
+DAYS.forEach(({ day }) => {
+  let order = 0;
+  timetableSlots.forEach((slot) => {
+    if (!slot.subjectId) return;
+    const id = `seed-tt-${GRADE_6}-${day}-${order}`;
+    db.prepare(
+      `INSERT OR REPLACE INTO timetable_slots (id, grade_id, day_of_week, start_time, end_time, subject_id, title, competency_hint, link_type, link_id, is_suggested, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', NULL, 0, ?)`
+    ).run(id, GRADE_6, day, slot.start, slot.end, slot.subjectId, slot.title, slot.competency, order);
+    order += 1;
+  });
+});
+
+// --- Calendar: holidays + sample exam/quiz events (2025–2026) ---
+const calendarEvents = [
+  { id: 'cal-h1', grade_id: null, subject_id: null, title: 'New Year', event_type: 'holiday', date: '2025-01-01', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'Public holiday', term_id: null, competency_hint: null },
+  { id: 'cal-h2', grade_id: null, subject_id: null, title: 'Good Friday', event_type: 'holiday', date: '2025-04-18', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'Public holiday', term_id: null, competency_hint: null },
+  { id: 'cal-h3', grade_id: null, subject_id: null, title: 'Easter Monday', event_type: 'holiday', date: '2025-04-21', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'Public holiday', term_id: null, competency_hint: null },
+  { id: 'cal-h4', grade_id: null, subject_id: null, title: 'Madaraka Day', event_type: 'holiday', date: '2025-06-01', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'Public holiday', term_id: null, competency_hint: null },
+  { id: 'cal-h5', grade_id: null, subject_id: null, title: 'Eid ul-Adha', event_type: 'holiday', date: '2025-06-07', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'Public holiday', term_id: null, competency_hint: null },
+  { id: 'cal-h6', grade_id: null, subject_id: null, title: 'Kenyatta Day', event_type: 'holiday', date: '2025-10-20', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'Public holiday', term_id: null, competency_hint: null },
+  { id: 'cal-e1', grade_id: GRADE_7, subject_id: SUBJECT_MATH, title: 'Math End of Term 1 Assessment', event_type: 'exam', date: '2025-03-15', start_time: '09:00', end_time: '11:00', entity_type: 'written_exam', entity_id: null, description: 'Grade 7 Mathematics', term_id: null, competency_hint: 'Numbers, Algebra' },
+  { id: 'cal-e2', grade_id: GRADE_7, subject_id: SUBJECT_ENG, title: 'English Continuous Assessment', event_type: 'quiz', date: '2025-02-28', start_time: '10:00', end_time: null, entity_type: 'quiz', entity_id: null, description: 'Comprehension & Grammar', term_id: null, competency_hint: null },
+  { id: 'cal-e3', grade_id: GRADE_7, subject_id: null, title: 'Term 1 Ends', event_type: 'event', date: '2025-04-04', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'School closes', term_id: null, competency_hint: null },
+  { id: 'cal-e4', grade_id: GRADE_7, subject_id: null, title: 'Term 2 Opens', event_type: 'event', date: '2025-05-05', start_time: null, end_time: null, entity_type: '', entity_id: null, description: 'School opens', term_id: null, competency_hint: null },
+];
+calendarEvents.forEach((e) => {
+  db.prepare(
+    `INSERT OR REPLACE INTO calendar_events (id, grade_id, subject_id, title, event_type, date, start_time, end_time, entity_type, entity_id, description, term_id, competency_hint)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(e.id, e.grade_id, e.subject_id, e.title, e.event_type, e.date, e.start_time, e.end_time, e.entity_type, e.entity_id ?? null, e.description, e.term_id, e.competency_hint);
+});
+
 db.close();
-console.log('Seed completed: Grade 1–9, subjects, strands, library, question bank, quizzes, written exam, badges, daily/weekly.');
+console.log('Seed completed: Grade 1–9, subjects, strands, library, question bank, quizzes, written exam, badges, daily/weekly, terms & weeks, timetable, calendar.');

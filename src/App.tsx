@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { hasBackend, apiEngagementPreferences } from './lib/api';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -14,11 +15,29 @@ import { SittingExamPage } from './pages/exams/SittingExamPage';
 import { TeacherMarkingPage } from './pages/exams/TeacherMarkingPage';
 import { LibraryUploadPage } from './pages/library/LibraryUploadPage';
 import { AdminLibraryPage } from './pages/admin/AdminLibraryPage';
+import { DiscussionsPage } from './pages/discussions/DiscussionsPage';
+import { TimetablePage } from './pages/timetable/TimetablePage';
+import { CalendarPage } from './pages/calendar/CalendarPage';
 
 function AppContent() {
   const { user, profile, loading, signOut } = useAuth();
   const [showSignUp, setShowSignUp] = useState(false);
   const [currentPath, setCurrentPath] = useState('/dashboard');
+
+  // IMPORTANT: hooks must not be called conditionally.
+  // Apply preferences only when authenticated and backend is enabled.
+  useEffect(() => {
+    if (!user || !hasBackend()) return;
+    apiEngagementPreferences()
+      .then((prefs) => {
+        const html = document.documentElement;
+        if (prefs.theme === 'dark') html.classList.add('dark');
+        else if (prefs.theme === 'light') html.classList.remove('dark');
+        else html.classList.toggle('dark', window.matchMedia('(prefers-color-scheme: dark)').matches);
+        html.setAttribute('data-font-size', prefs.font_size || 'medium');
+      })
+      .catch(() => {});
+  }, [user]);
 
   if (loading) {
     return (
@@ -61,6 +80,15 @@ function AppContent() {
     if (currentPath === '/teacher/marking') {
       return <TeacherMarkingPage onNavigate={setCurrentPath} />;
     }
+    if (currentPath === '/discussions') {
+      return <DiscussionsPage onNavigate={setCurrentPath} />;
+    }
+    if (currentPath === '/timetable') {
+      return <TimetablePage onNavigate={setCurrentPath} />;
+    }
+    if (currentPath === '/calendar') {
+      return <CalendarPage onNavigate={setCurrentPath} />;
+    }
 
     if (profile.user_type === 'student') {
       return <StudentDashboard onNavigate={setCurrentPath} />;
@@ -79,7 +107,7 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <Sidebar
         userType={profile.user_type}
         currentPath={currentPath}

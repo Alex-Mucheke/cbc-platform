@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getLastScoreForSubjectStrand } from '../services/engagement.js';
 
 const router = Router();
 
@@ -61,17 +62,27 @@ router.post('/', requireAuth, (req, res) => {
   }
 });
 
-// POST /api/question-bank/generate-quiz — exam generator: create quiz from bank (grade_id, subject_id, count, difficulty_mix)
+// POST /api/question-bank/generate-quiz — exam generator (teacher/admin) or adaptive practice (student when adaptive=1)
 router.post('/generate-quiz', requireAuth, (req, res) => {
   try {
     const userId = req.user.id;
     const profile = db.prepare('SELECT user_type FROM users WHERE id = ?').get(userId);
-    if (profile?.user_type !== 'teacher' && profile?.user_type !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const { grade_id, subject_id, strand_id, title, count = 10, difficulty_mix = 'mixed', timer_seconds = 60, exam_mode = 'topic_quiz' } = req.body;
+    const isTeacherOrAdmin = profile?.user_type === 'teacher' || profile?.user_type === 'admin';
+    const { grade_id, subject_id, strand_id, title, count = 10, difficulty_mix: bodyMix = 'mixed', timer_seconds = 60, exam_mode = 'topic_quiz', adaptive } = req.body;
     if (!grade_id || !subject_id || !title) {
       return res.status(400).json({ error: 'grade_id, subject_id, title required' });
+    }
+    if (!isTeacherOrAdmin && !adaptive) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    let difficulty_mix = bodyMix;
+    if (adaptive && (profile?.user_type === 'student' || isTeacherOrAdmin)) {
+      const lastScore = getLastScoreForSubjectStrand(userId, subject_id, strand_id || null);
+      if (lastScore != null) {
+        if (lastScore >= 80) difficulty_mix = 'advanced';
+        else if (lastScore < 50) difficulty_mix = 'basic';
+        else difficulty_mix = 'intermediate';
+      }
     }
     const validModes = ['topic_quiz', 'end_of_strand', 'end_of_term', 'mock_national', 'timed_drill', 'remedial', 'challenge'];
     const mode = validModes.includes(exam_mode) ? exam_mode : 'topic_quiz';
@@ -92,7 +103,7 @@ router.post('/generate-quiz', requireAuth, (req, res) => {
     db.prepare(`
       INSERT INTO quizzes (id, title, subject_id, grade_id, strand_id, difficulty, exam_mode, timer_seconds, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(quizId, title, subject_id, grade_id, strand_id || null, difficulty, mode, timer_seconds || 60, userId);
+    `).run(quizId, title, subject_id, grade_id, strand_id || null, difficulty, mode, timer_seconds || 60, isTeacherOrAdmin ? userId : null);
     let sortOrder = 0;
     for (const bq of bankQuestions) {
       const qId = randomUUID();

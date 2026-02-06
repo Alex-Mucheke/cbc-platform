@@ -6,6 +6,7 @@ import {
   signInLocal,
   signUpLocal,
   signOutLocal,
+  clearAllAuthStorage,
 } from '../lib/auth';
 import {
   hasBackend,
@@ -34,6 +35,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('clear_auth') === '1') {
+      clearAllAuthStorage();
+      params.delete('clear_auth');
+      const newSearch = params.toString();
+      const url = newSearch ? `${window.location.pathname}?${newSearch}` : window.location.pathname;
+      window.history.replaceState({}, '', url);
+    }
     if (hasBackend()) {
       apiMe()
         .then((data) => {

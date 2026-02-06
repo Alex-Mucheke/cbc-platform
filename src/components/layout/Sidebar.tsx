@@ -33,7 +33,7 @@ const navItems: NavItem[] = [
   { icon: GraduationCap, label: 'My Courses', href: '/courses', roles: ['student'] },
   { icon: Award, label: 'Achievements', href: '/achievements', roles: ['student'] },
   { icon: BarChart3, label: 'Performance', href: '/performance', roles: ['student', 'parent'] },
-  { icon: Clock, label: 'Timetable', href: '/timetable', roles: ['student', 'teacher'] },
+  { icon: Clock, label: 'Timetable', href: '/timetable', roles: ['student', 'teacher', 'parent'] },
   { icon: Users, label: 'My Students', href: '/students', roles: ['teacher'] },
   { icon: FileText, label: 'Lesson Plans', href: '/lesson-plans', roles: ['teacher'] },
   { icon: Users, label: 'My Children', href: '/children', roles: ['parent'] },

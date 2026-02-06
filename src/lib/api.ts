@@ -8,12 +8,26 @@ const TOKEN_KEY = 'cbc_token';
 
 function getBaseUrl(): string {
   const url = import.meta.env.VITE_API_URL;
-  if (!url || typeof url !== 'string') return '';
-  return url.replace(/\/$/, '');
+  if (url === undefined || url === null) return '';
+  const s = typeof url === 'string' ? url.replace(/\/$/, '') : '';
+  return s;
 }
 
 function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+const BACKEND_UNREACHABLE =
+  'Cannot reach server. Start the backend with: cd backend && npm run dev';
+
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'Failed to fetch' || msg.includes('fetch')) throw new Error(BACKEND_UNREACHABLE);
+    throw err;
+  }
 }
 
 function setToken(token: string | null): void {
@@ -22,7 +36,7 @@ function setToken(token: string | null): void {
 }
 
 export function hasBackend(): boolean {
-  return !!getBaseUrl();
+  return !!getBaseUrl() || import.meta.env.DEV;
 }
 
 export function clearToken(): void {
@@ -36,7 +50,8 @@ export async function apiRegister(
   userType: string
 ): Promise<{ user: { id: string; email: string }; profile: Profile; token: string }> {
   const base = getBaseUrl();
-  const res = await fetch(`${base}/api/auth/register`, {
+  const url = base ? `${base}/api/auth/register` : '/api/auth/register';
+  const res = await safeFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password, fullName, userType }),
@@ -52,7 +67,8 @@ export async function apiLogin(
   password: string
 ): Promise<{ user: { id: string; email: string }; profile: Profile; token: string }> {
   const base = getBaseUrl();
-  const res = await fetch(`${base}/api/auth/login`, {
+  const url = base ? `${base}/api/auth/login` : '/api/auth/login';
+  const res = await safeFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -70,7 +86,8 @@ export async function apiMe(): Promise<{
   const base = getBaseUrl();
   const token = getToken();
   if (!token) return null;
-  const res = await fetch(`${base}/api/auth/me`, {
+  const url = base ? `${base}/api/auth/me` : '/api/auth/me';
+  const res = await safeFetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) {
@@ -91,10 +108,10 @@ export function getAuthHeaders(): Record<string, string> {
 /** Fetch helper for API (uses base URL + auth when backend present) */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const base = getBaseUrl();
-  if (!base) throw new Error('Backend not configured');
-  const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+  if (!base && !import.meta.env.DEV) throw new Error('Backend not configured');
+  const url = path.startsWith('http') ? path : base ? `${base}${path.startsWith('/') ? '' : '/'}${path}` : path;
   const headers = { ...getAuthHeaders(), ...(init?.headers as Record<string, string>) };
-  return fetch(url, { ...init, headers });
+  return safeFetch(url, { ...init, headers });
 }
 
 /** Jiggle Your Mind — list quizzes (optional filter: exam_mode, grade_id, subject_id) */
@@ -263,6 +280,66 @@ export async function apiSubStrands(strand_id: string): Promise<Array<{ id: stri
   return res.json();
 }
 
+/** Term planner: terms per grade */
+export async function apiTerms(grade_id?: string): Promise<Array<{ id: string; grade_id: string; name: string; term_number: number; start_date: string | null; end_date: string | null; sort_order: number }>> {
+  const search = grade_id ? `?grade_id=${encodeURIComponent(grade_id)}` : '';
+  const res = await apiFetch(`/api/terms${search}`);
+  if (!res.ok) throw new Error('Failed to load terms');
+  return res.json();
+}
+
+/** Term planner: weeks per term */
+export async function apiTermWeeks(term_id: string): Promise<Array<{ id: string; term_id: string; week_number: number; title: string | null; start_date: string | null; end_date: string | null; sort_order: number }>> {
+  const res = await apiFetch(`/api/term-weeks?term_id=${encodeURIComponent(term_id)}`);
+  if (!res.ok) throw new Error('Failed to load term weeks');
+  return res.json();
+}
+
+/** Timetable: weekly slots per grade (day_of_week 1=Mon .. 5=Fri) */
+export async function apiTimetable(grade_id: string): Promise<Array<{
+  id: string;
+  grade_id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  subject_id: string;
+  subject_name: string;
+  title: string;
+  strand_id: string | null;
+  competency_hint: string | null;
+  link_type: string | null;
+  link_id: string | null;
+  is_suggested: number;
+  sort_order: number;
+}>> {
+  const res = await apiFetch(`/api/timetable?grade_id=${encodeURIComponent(grade_id)}`);
+  if (!res.ok) throw new Error('Failed to load timetable');
+  return res.json();
+}
+
+/** Calendar: events in date range (grade_id optional) */
+export async function apiCalendarEvents(params: { grade_id?: string; start: string; end: string }): Promise<Array<{
+  id: string;
+  grade_id: string | null;
+  subject_id: string | null;
+  title: string;
+  event_type: string;
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  description: string | null;
+  term_id: string | null;
+  competency_hint: string | null;
+}>> {
+  const search = new URLSearchParams({ start: params.start, end: params.end });
+  if (params.grade_id) search.set('grade_id', params.grade_id);
+  const res = await apiFetch(`/api/calendar/events?${search.toString()}`);
+  if (!res.ok) throw new Error('Failed to load calendar events');
+  return res.json();
+}
+
 // --- Library upload (teacher/admin) ---
 export async function apiLibraryCreate(body: {
   grade_id: string;
@@ -405,4 +482,86 @@ export async function apiEngagementRecordDailyAttempt(
     throw new Error((d as { error?: string }).error || 'Failed to record');
   }
   return res.json();
+}
+
+/** Readiness score: "You are X% ready for your next assessment" */
+export async function apiEngagementReadiness(): Promise<{
+  grade_id: string | null;
+  grade_name: string;
+  readiness_percent: number;
+  message: string;
+}> {
+  const res = await apiFetch('/api/engagement/readiness');
+  if (!res.ok) throw new Error('Failed to load readiness');
+  return res.json();
+}
+
+/** Leaderboard by XP (?scope=global&limit=10) */
+export async function apiEngagementLeaderboard(params?: { scope?: string; limit?: number }): Promise<Array<{
+  rank: number;
+  user_id: string;
+  full_name: string;
+  total_xp: number;
+  level: number;
+}>> {
+  const search = params ? new URLSearchParams(params as Record<string, string>).toString() : '';
+  const res = await apiFetch(`/api/engagement/leaderboard${search ? `?${search}` : ''}`);
+  if (!res.ok) throw new Error('Failed to load leaderboard');
+  return res.json();
+}
+
+/** Weak topics (last score < 70% or few attempts) */
+export async function apiEngagementWeaknesses(): Promise<Array<{
+  subject_name: string;
+  strand_name: string | null;
+  sub_strand_name: string | null;
+  last_score_percent: number | null;
+  attempts_count: number;
+}>> {
+  const res = await apiFetch('/api/engagement/weaknesses');
+  if (!res.ok) throw new Error('Failed to load weaknesses');
+  return res.json();
+}
+
+/** Step-by-step hints for a question */
+export async function apiEngagementQuestionHints(
+  questionEntityType: string,
+  questionEntityId: string
+): Promise<Array<{ id: string; step_order: number; step_type: string; content_text: string | null; content_html: string | null; video_url: string | null }>> {
+  const res = await apiFetch(
+    `/api/engagement/question-hints?question_entity_type=${encodeURIComponent(questionEntityType)}&question_entity_id=${encodeURIComponent(questionEntityId)}`
+  );
+  if (!res.ok) throw new Error('Failed to load hints');
+  return res.json();
+}
+
+/** User preferences (theme, font_size, etc.) */
+export async function apiEngagementPreferences(): Promise<{
+  font_size: string;
+  theme: string;
+  text_to_speech: number;
+  low_data_mode: number;
+}> {
+  const res = await apiFetch('/api/engagement/preferences');
+  if (!res.ok) throw new Error('Failed to load preferences');
+  return res.json();
+}
+
+export async function apiEngagementUpdatePreferences(prefs: {
+  font_size?: string;
+  theme?: string;
+  text_to_speech?: number | boolean;
+  low_data_mode?: number | boolean;
+}): Promise<void> {
+  const body: Record<string, string | number> = {};
+  if (prefs.font_size !== undefined) body.font_size = prefs.font_size;
+  if (prefs.theme !== undefined) body.theme = prefs.theme;
+  if (prefs.text_to_speech !== undefined) body.text_to_speech = prefs.text_to_speech ? 1 : 0;
+  if (prefs.low_data_mode !== undefined) body.low_data_mode = prefs.low_data_mode ? 1 : 0;
+  const res = await apiFetch('/api/engagement/preferences', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error('Failed to update preferences');
 }

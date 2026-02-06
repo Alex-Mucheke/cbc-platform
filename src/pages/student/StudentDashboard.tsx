@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Award, BookOpen, TrendingUp, Clock, Target, Zap, Flame, Trophy } from 'lucide-react';
+import { Award, BookOpen, TrendingUp, Clock, Zap, Flame, Trophy, Target } from 'lucide-react';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import {
@@ -11,6 +11,9 @@ import {
   apiEngagementSummary,
   apiEngagementProgress,
   apiEngagementDailyChallenge,
+  apiEngagementWeaknesses,
+  apiEngagementReadiness,
+  apiEngagementLeaderboard,
   type EngagementSummary,
 } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,6 +41,15 @@ export function StudentDashboard({ onNavigate }: StudentDashboardProps) {
     challenge: { id: string; title: string; quiz_id: string; subject_name: string; grade_name: string } | null;
     attempted: { score: number; total_questions: number } | null;
   } | null>(null);
+  const [weaknesses, setWeaknesses] = useState<Array<{
+    subject_name: string;
+    strand_name: string | null;
+    sub_strand_name: string | null;
+    last_score_percent: number | null;
+    attempts_count: number;
+  }>>([]);
+  const [readiness, setReadiness] = useState<{ grade_name: string; readiness_percent: number; message: string } | null>(null);
+  const [leaderboard, setLeaderboard] = useState<Array<{ rank: number; full_name: string; total_xp: number; level: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -49,14 +61,20 @@ export function StudentDashboard({ onNavigate }: StudentDashboardProps) {
     setLoading(true);
     setError('');
     try {
-      const [s, p, d] = await Promise.all([
+      const [s, p, d, w, r, lb] = await Promise.all([
         apiEngagementSummary(),
         apiEngagementProgress(),
         apiEngagementDailyChallenge(),
+        apiEngagementWeaknesses().catch(() => []),
+        apiEngagementReadiness().catch(() => null),
+        apiEngagementLeaderboard({ limit: 10 }).catch(() => []),
       ]);
       setSummary(s);
       setProgressBySubject(p);
       setDailyChallenge(d);
+      setWeaknesses(w);
+      setReadiness(r || null);
+      setLeaderboard(lb || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -89,6 +107,21 @@ export function StudentDashboard({ onNavigate }: StudentDashboardProps) {
 
       {error && (
         <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">{error}</div>
+      )}
+
+      {readiness && hasBackend() && (
+        <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+          <CardBody className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Target className="w-7 h-7 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-800">Assessment readiness</p>
+              <p className="text-2xl font-bold text-gray-900">{readiness.readiness_percent}%</p>
+              <p className="text-sm text-gray-600 mt-0.5">{readiness.message}</p>
+            </div>
+          </CardBody>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -224,16 +257,30 @@ export function StudentDashboard({ onNavigate }: StudentDashboardProps) {
             </Card>
           )}
 
-          {dailyChallenge?.attempted && (
-            <Card>
+          {(dailyChallenge?.attempted || (dailyChallenge?.challenge === null && hasBackend())) && (
+            <Card className="border-2 border-amber-200 bg-amber-50/50">
               <CardHeader>
-                <h3 className="text-lg font-semibold text-gray-900">Daily Challenge</h3>
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-amber-600" />
+                  Daily Challenge
+                </h3>
               </CardHeader>
               <CardBody>
-                <p className="text-green-700 font-medium">Completed today!</p>
-                <p className="text-sm text-gray-600">
-                  Score: {dailyChallenge.attempted.score} / {dailyChallenge.attempted.total_questions}
-                </p>
+                {dailyChallenge?.attempted ? (
+                  <>
+                    <p className="text-green-700 font-medium">Completed today!</p>
+                    <p className="text-sm text-gray-600">
+                      Score: {dailyChallenge.attempted.score} / {dailyChallenge.attempted.total_questions}
+                    </p>
+                    <p className="text-sm text-amber-800 mt-2 font-medium">
+                      Come back tomorrow for the next challenge — +10 bonus XP for consistency!
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-amber-800 font-medium">
+                    Come back tomorrow for a new daily challenge. +10 bonus XP when you complete it!
+                  </p>
+                )}
               </CardBody>
             </Card>
           )}
@@ -271,6 +318,61 @@ export function StudentDashboard({ onNavigate }: StudentDashboardProps) {
         </div>
 
         <div className="space-y-6">
+          {leaderboard.length > 0 && hasBackend() && (
+            <Card>
+              <CardHeader>
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-amber-600" />
+                  Top learners
+                </h3>
+              </CardHeader>
+              <CardBody>
+                <ul className="space-y-2">
+                  {leaderboard.slice(0, 5).map((entry) => (
+                    <li key={entry.rank} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-gray-900">
+                        #{entry.rank} {entry.full_name}
+                      </span>
+                      <span className="text-gray-600">{entry.total_xp.toLocaleString()} XP</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          )}
+          {weaknesses.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50/30">
+              <CardHeader>
+                <h3 className="text-lg font-semibold text-gray-900">Topics to revise</h3>
+                <p className="text-sm text-gray-600">Practice these to improve your scores</p>
+              </CardHeader>
+              <CardBody>
+                <ul className="space-y-2">
+                  {weaknesses.slice(0, 5).map((w, i) => (
+                    <li key={i} className="text-sm flex justify-between items-center">
+                      <span className="font-medium text-gray-900">
+                        {w.subject_name}
+                        {w.strand_name && ` · ${w.strand_name}`}
+                        {w.sub_strand_name && ` · ${w.sub_strand_name}`}
+                      </span>
+                      <span className="text-amber-700">
+                        {w.last_score_percent != null ? `${w.last_score_percent}%` : `${w.attempts_count} attempt(s)`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => onNavigate?.('/jiggle-your-mind')}
+                >
+                  Practice quizzes
+                </Button>
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <h3 className="text-lg font-semibold text-gray-900">Overall Progress</h3>

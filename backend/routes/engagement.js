@@ -1,5 +1,5 @@
 /**
- * Engagement API: summary, progress, badges, certificates, daily challenge, weekly quiz.
+ * Engagement API: summary, progress, badges, weaknesses, question hints, preferences, daily challenge, weekly quiz.
  */
 
 import { Router } from 'express';
@@ -11,6 +11,9 @@ import {
   getUserBadges,
   getUserCertificates,
   getProgressBySubject,
+  getWeaknesses,
+  getReadiness,
+  getLeaderboard,
   recordQuizComplete,
   recordExamSubmit,
 } from '../services/engagement.js';
@@ -39,6 +42,17 @@ router.get('/progress', requireAuth, (req, res) => {
   }
 });
 
+// GET /api/engagement/weaknesses — weak topics (last_score < 70% or few attempts)
+router.get('/weaknesses', requireAuth, (req, res) => {
+  try {
+    const weaknesses = getWeaknesses(req.user.id);
+    res.json(weaknesses);
+  } catch (err) {
+    console.error('Engagement weaknesses:', err);
+    res.status(500).json({ error: 'Failed to load weaknesses' });
+  }
+});
+
 // GET /api/engagement/badges — my badges
 router.get('/badges', requireAuth, (req, res) => {
   try {
@@ -58,6 +72,30 @@ router.get('/certificates', requireAuth, (req, res) => {
   } catch (err) {
     console.error('Engagement certificates:', err);
     res.status(500).json({ error: 'Failed to load certificates' });
+  }
+});
+
+// GET /api/engagement/readiness — readiness score for dashboard ("You are X% ready for Grade Y assessment")
+router.get('/readiness', requireAuth, (req, res) => {
+  try {
+    const readiness = getReadiness(req.user.id);
+    res.json(readiness);
+  } catch (err) {
+    console.error('Engagement readiness:', err);
+    res.status(500).json({ error: 'Failed to load readiness' });
+  }
+});
+
+// GET /api/engagement/leaderboard — top learners by XP (?scope=global&limit=10)
+router.get('/leaderboard', requireAuth, (req, res) => {
+  try {
+    const scope = req.query.scope === 'class' ? 'class' : 'global';
+    const limit = Math.min(50, parseInt(req.query.limit, 10) || 10);
+    const list = getLeaderboard(scope, limit);
+    res.json(list);
+  } catch (err) {
+    console.error('Engagement leaderboard:', err);
+    res.status(500).json({ error: 'Failed to load leaderboard' });
   }
 });
 
@@ -173,6 +211,65 @@ router.post('/record-quiz-complete', requireAuth, (req, res) => {
   } catch (err) {
     console.error('Record quiz complete:', err);
     res.status(500).json({ error: 'Failed to record' });
+  }
+});
+
+// GET /api/engagement/question-hints — step-by-step hints for a question (quiz_question or question_bank id)
+router.get('/question-hints', (req, res) => {
+  try {
+    const { question_entity_type, question_entity_id } = req.query;
+    if (!question_entity_type || !question_entity_id) {
+      return res.status(400).json({ error: 'question_entity_type and question_entity_id required' });
+    }
+    const rows = db
+      .prepare(
+        'SELECT id, step_order, step_type, content_text, content_html, video_url FROM question_hints WHERE question_entity_type = ? AND question_entity_id = ? ORDER BY step_order'
+      )
+      .all(question_entity_type, question_entity_id);
+    res.json(rows);
+  } catch (err) {
+    console.error('Question hints:', err);
+    res.status(500).json({ error: 'Failed to load hints' });
+  }
+});
+
+// GET /api/engagement/preferences — user preferences (theme, font_size, etc.)
+router.get('/preferences', requireAuth, (req, res) => {
+  try {
+    const row = db.prepare('SELECT font_size, theme, text_to_speech, low_data_mode FROM user_preferences WHERE user_id = ?').get(req.user.id);
+    res.json(row || { font_size: 'medium', theme: 'light', text_to_speech: 0, low_data_mode: 0 });
+  } catch (err) {
+    console.error('Preferences:', err);
+    res.status(500).json({ error: 'Failed to load preferences' });
+  }
+});
+
+// PATCH /api/engagement/preferences — update preferences
+router.patch('/preferences', requireAuth, (req, res) => {
+  try {
+    const { font_size, theme, text_to_speech, low_data_mode } = req.body;
+    const userId = req.user.id;
+    const existing = db.prepare('SELECT user_id FROM user_preferences WHERE user_id = ?').get(userId);
+    const updates = [];
+    const values = [];
+    if (font_size !== undefined) { updates.push('font_size = ?'); values.push(['small', 'medium', 'large'].includes(font_size) ? font_size : 'medium'); }
+    if (theme !== undefined) { updates.push('theme = ?'); values.push(['light', 'dark', 'system'].includes(theme) ? theme : 'light'); }
+    if (text_to_speech !== undefined) { updates.push('text_to_speech = ?'); values.push(text_to_speech ? 1 : 0); }
+    if (low_data_mode !== undefined) { updates.push('low_data_mode = ?'); values.push(low_data_mode ? 1 : 0); }
+    if (updates.length === 0) return res.json({ ok: true });
+    values.push(userId);
+    if (existing) {
+      db.prepare(`UPDATE user_preferences SET ${updates.join(', ')}, updated_at = datetime('now') WHERE user_id = ?`).run(...values);
+    } else {
+      db.prepare(
+        `INSERT INTO user_preferences (user_id, font_size, theme, text_to_speech, low_data_mode, updated_at) VALUES (?, 'medium', 'light', 0, 0)`
+      ).run(userId);
+      db.prepare(`UPDATE user_preferences SET ${updates.join(', ')}, updated_at = datetime('now') WHERE user_id = ?`).run(...values);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Update preferences:', err);
+    res.status(500).json({ error: 'Failed to update preferences' });
   }
 });
 

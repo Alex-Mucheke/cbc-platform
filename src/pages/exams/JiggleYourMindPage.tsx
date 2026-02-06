@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Brain, ArrowLeft, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Brain, ArrowLeft, Clock, CheckCircle, XCircle, Lightbulb } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import {
   hasBackend,
@@ -12,6 +12,7 @@ import {
   apiQuizStartAttempt,
   apiQuizSubmitAnswer,
   apiQuizCompleteAttempt,
+  apiEngagementQuestionHints,
 } from '../../lib/api';
 
 type View = 'list' | 'play' | 'summary';
@@ -62,6 +63,8 @@ export function JiggleYourMindPage({ onNavigate }: JiggleYourMindPageProps) {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ is_correct: boolean; explanation: string | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [hints, setHints] = useState<Array<{ step_order: number; step_type: string; content_text: string | null }>>([]);
+  const [hintStep, setHintStep] = useState(0);
 
   const [summary, setSummary] = useState<{ score: number; total: number; time_taken_seconds: number } | null>(null);
 
@@ -100,6 +103,8 @@ export function JiggleYourMindPage({ onNavigate }: JiggleYourMindPageProps) {
       setTimerSecs(timer_seconds ?? 60);
       setFeedback(null);
       setSelectedOptionId(null);
+      setHints([]);
+      setHintStep(0);
       setView('play');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to start quiz');
@@ -108,6 +113,15 @@ export function JiggleYourMindPage({ onNavigate }: JiggleYourMindPageProps) {
 
   const currentQuestionId = questionIds[currentIndex];
   const currentQuestion = quiz?.questions.find((q) => q.id === currentQuestionId);
+
+  useEffect(() => {
+    if (view !== 'play' || !currentQuestionId || !hasBackend()) return;
+    setHints([]);
+    setHintStep(0);
+    apiEngagementQuestionHints('quiz_question', currentQuestionId)
+      .then((list) => setHints(list))
+      .catch(() => setHints([]));
+  }, [view, currentQuestionId]);
 
   useEffect(() => {
     if (view !== 'play' || !currentQuestionId || feedback) return;
@@ -244,7 +258,35 @@ export function JiggleYourMindPage({ onNavigate }: JiggleYourMindPageProps) {
                   </button>
                 ))}
               </div>
-              <div className="mt-6 flex gap-2">
+              {hints.length > 0 && hintStep >= 1 && hintStep <= hints.length && (
+                <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200">
+                  <p className="text-sm font-medium text-amber-800 flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4" />
+                    {hints[hintStep - 1].step_type === 'full_solution' ? 'Solution' : 'Hint'}:
+                  </p>
+                  <p className="text-gray-800 mt-1">{hints[hintStep - 1].content_text}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setHintStep((s) => (s < hints.length ? s + 1 : s))}
+                  >
+                    {hintStep < hints.length ? 'Next hint' : 'Got it'}
+                  </Button>
+                </div>
+              )}
+              {hints.length > 0 && hintStep === 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => setHintStep(1)}
+                >
+                  <Lightbulb className="w-4 h-4 mr-1" />
+                  Show hint
+                </Button>
+              )}
+              <div className="mt-6 flex gap-2 flex-wrap">
                 <Button onClick={submitAnswer} disabled={!selectedOptionId || submitting}>
                   {submitting ? 'Submitting...' : 'Submit answer'}
                 </Button>
