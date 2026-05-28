@@ -41,6 +41,8 @@ async function getAiReply(userMessage: string): Promise<string> {
 }
 
 export function DiscussionsPage({ onNavigate }: { onNavigate?: (path: string) => void }) {
+  void onNavigate;
+
   const [activeTab, setActiveTab] = useState<TabId>('ai');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {

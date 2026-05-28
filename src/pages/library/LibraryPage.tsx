@@ -91,7 +91,11 @@ export function LibraryPage({ onNavigate }: { onNavigate?: (path: string) => voi
       const [r, m] = await Promise.all([apiLibraryRecent(), apiLibraryMostUsed()]);
       setRecent(r);
       setMostUsed(m);
-    } catch (_) {}
+    } catch (err) {
+      void err;
+      // ignore recent/most-used errors
+    }
+
   }, []);
 
   useEffect(() => {

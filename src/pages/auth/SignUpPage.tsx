@@ -37,9 +37,10 @@ export function SignUpPage({ onToggleForm }: SignUpPageProps) {
 
     try {
       await signUp(formData.email, formData.password, formData.fullName, formData.userType);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to create account');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create account');
     } finally {
+
       setLoading(false);
     }
   };

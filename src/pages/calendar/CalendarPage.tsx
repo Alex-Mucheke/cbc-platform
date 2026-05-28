@@ -65,6 +65,8 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
   const [weaknesses, setWeaknesses] = useState<Array<{ subject_name: string; strand_name: string | null }>>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  void loading;
+
 
   const loadGrades = useCallback(async () => {
     if (!hasBackend()) return;

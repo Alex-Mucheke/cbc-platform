@@ -25,8 +25,9 @@ export interface Student {
   total_xp: number;
   current_streak: number;
   longest_streak: number;
-  badges: any[];
-  learning_goals: any[];
+  badges: unknown[];
+  learning_goals: unknown[];
+
 }
 
 export interface Teacher {
@@ -184,3 +185,4 @@ export function getProfileFromSession(): Profile | null {
   const stored = users.find((u) => u.id === session.userId);
   return stored ? storedUserToProfile(stored) : null;
 }
+

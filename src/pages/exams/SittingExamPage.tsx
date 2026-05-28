@@ -111,9 +111,11 @@ export function SittingExamPage({ onNavigate }: SittingExamPageProps) {
     if (list.every((a) => !a.answer_text.trim())) return;
     try {
       await apiWrittenExamAutosave(submissionId, list);
-    } catch (_) {
+    } catch (err) {
+      void err;
       // ignore autosave errors
     }
+
   }, [submissionId, answers, submitted]);
 
   useEffect(() => {
@@ -217,8 +219,11 @@ export function SittingExamPage({ onNavigate }: SittingExamPageProps) {
                                 status: data.status,
                               });
                               setView('result');
-                            } catch (_) {}
+                            } catch (err) {
+                              void err;
+                            }
                           }}>View result</Button>
+
                         </div>
                       ) : (
                         <Button onClick={() => startExam(e.id)}>Start exam</Button>

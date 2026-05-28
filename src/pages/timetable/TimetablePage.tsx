@@ -42,7 +42,8 @@ interface TimetableSlot {
 }
 
 export function TimetablePage({ onNavigate }: { onNavigate?: (path: string) => void }) {
-  const { profile } = useAuth();
+  useAuth();
+
   const [view, setView] = useState<'week' | 'day'>('week');
   const [selectedDay, setSelectedDay] = useState(1);
   const [gradeId, setGradeId] = useState<string>('');
